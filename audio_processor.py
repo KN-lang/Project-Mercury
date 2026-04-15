@@ -67,24 +67,30 @@ class AudioProcessor:
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
-    def transcribe(self, source) -> str:
+    def transcribe(self, source, fmt: str = "wav") -> str:
         """
         Transcribe audio from various source types.
+        fmt: audio format hint (wav/webm/mp3/ogg) so the correct file
+             extension is used — MLX Whisper's ffmpeg handles the decoding.
         Returns the transcribed string (stripped) or "" on silence/failure.
         """
         if isinstance(source, (bytes, bytearray)):
-            return self._from_bytes(bytes(source))
+            return self._from_bytes(bytes(source), fmt=fmt)
         if hasattr(source, "read"):          # BytesIO, UploadedFile …
-            return self._from_bytes(source.read())
+            return self._from_bytes(source.read(), fmt=fmt)
         if isinstance(source, (str, Path)):
             return self._from_file(str(source))
         raise TypeError(f"AudioProcessor.transcribe: unsupported source type {type(source)}")
 
     # ── Private helpers ────────────────────────────────────────────────────────
 
-    def _from_bytes(self, audio_bytes: bytes) -> str:
-        """Save bytes to a temp WAV file, transcribe, then delete."""
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False, prefix="mercury_audio_") as tmp:
+    def _from_bytes(self, audio_bytes: bytes, fmt: str = "wav") -> str:
+        """Save bytes to a temp file with the correct extension, transcribe, then delete."""
+        safe_fmt = fmt.split(";")[0].strip().lower()
+        if safe_fmt in ("mpeg", "mp4"):
+            safe_fmt = "mp3"
+        suffix = f".{safe_fmt}" if safe_fmt else ".wav"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False, prefix="mercury_audio_") as tmp:
             tmp.write(audio_bytes)
             tmp_path = tmp.name
         try:

@@ -3,8 +3,10 @@
 # Optimised for: Apple M1 (8 GB unified memory), macOS, Python 3.14
 # ─────────────────────────────────────────────────────────────────────────────
 
-# ── UI ────────────────────────────────────────────────────────────────────────
-streamlit>=1.35.0
+# ── Web server ───────────────────────────────────────────────────────────────
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
 
 # ── Speech-to-Text ────────────────────────────────────────────────────────────
 # Primary: MLX Whisper — Apple Silicon / Neural Engine (fast, low RAM)

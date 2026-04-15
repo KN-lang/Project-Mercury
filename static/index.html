@@ -1,0 +1,1642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mercury — Local Voice AI Agent</title>
+  <meta name="description" content="Mercury: a local, privacy-first voice AI agent. Speak to create files, write code, summarize text, or just chat." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;1,14..32,400&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ─── Reset & Base ─────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green:      #30d158;
+      --green-dim:  rgba(48, 209, 88, 0.18);
+      --teal:       #00c7be;
+      --teal-dim:   rgba(0, 199, 190, 0.12);
+      --white:      #ffffff;
+      --white-60:   rgba(255,255,255,0.60);
+      --white-40:   rgba(255,255,255,0.40);
+      --white-20:   rgba(255,255,255,0.20);
+      --white-10:   rgba(255,255,255,0.10);
+      --white-06:   rgba(255,255,255,0.06);
+      --white-04:   rgba(255,255,255,0.04);
+      --glass-bg:   rgba(18, 20, 18, 0.72);
+      --glass-bd:   rgba(255,255,255,0.09);
+      --surface:    rgba(255,255,255,0.055);
+      --error:      #ff453a;
+      --warn:       #ffd60a;
+      --radius-xl:  24px;
+      --radius-lg:  16px;
+      --radius-md:  12px;
+      --radius-pill:100px;
+      --shadow-lg:  0 32px 80px rgba(0,0,0,0.55);
+      --shadow-md:  0 12px 40px rgba(0,0,0,0.35);
+      --transition: 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #06080a;
+      color: var(--white);
+      min-height: 100vh;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ─── Background canvas & gradient ─────────────────────────────────────── */
+    #bg-canvas {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .bg-glow {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background:
+        radial-gradient(ellipse 70% 50% at 50% -5%,  rgba(48,209,88,0.20) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 40% at 80% 80%,  rgba(0,199,190,0.10) 0%, transparent 55%),
+        radial-gradient(ellipse 40% 30% at 10% 60%,  rgba(48,209,88,0.06) 0%, transparent 50%);
+    }
+
+    /* ─── Noise texture overlay ─────────────────────────────────────────────── */
+    body::after {
+      content: '';
+      position: fixed; inset: 0; z-index: 1; pointer-events: none;
+      opacity: 0.030;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-size: 180px;
+    }
+
+    /* ─── Layout wrapper ────────────────────────────────────────────────────── */
+    #app {
+      position: relative; z-index: 2;
+      min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 0 20px 80px;
+    }
+
+    /* ══════════════════════════════════════════════════════════════════════════
+       NAVBAR
+    ══════════════════════════════════════════════════════════════════════════ */
+    #navbar {
+      position: fixed; top: 20px; left: 50%; translate: -50% 0;
+      z-index: 1000;
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 10px 8px 16px;
+      background: rgba(12, 14, 12, 0.75);
+      backdrop-filter: blur(28px) saturate(180%);
+      -webkit-backdrop-filter: blur(28px) saturate(180%);
+      border: 1px solid var(--glass-bd);
+      border-radius: var(--radius-pill);
+      box-shadow: 0 4px 32px rgba(0,0,0,0.40), inset 0 1px 0 rgba(255,255,255,0.06);
+      transition: box-shadow var(--transition);
+    }
+
+    .nav-logo {
+      font-size: 15px; font-weight: 600;
+      color: var(--green);
+      letter-spacing: -0.01em;
+      padding-right: 10px;
+      border-right: 1px solid var(--glass-bd);
+      margin-right: 4px;
+      white-space: nowrap;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .nav-logo-icon {
+      width: 24px; height: 24px;
+      background: linear-gradient(135deg, var(--green), var(--teal));
+      border-radius: 6px;
+      display: grid; place-items: center;
+      font-size: 13px; font-weight: 700; color: #000;
+    }
+
+    .nav-tab {
+      position: relative;
+      padding: 6px 14px;
+      border-radius: var(--radius-pill);
+      border: none; background: transparent; cursor: pointer;
+      font-family: inherit; font-size: 13px; font-weight: 500;
+      color: var(--white-40);
+      transition: color var(--transition), background var(--transition);
+      white-space: nowrap;
+    }
+    .nav-tab:hover  { color: var(--white-60); background: var(--white-06); }
+    .nav-tab.active { color: var(--white);    background: var(--surface);  }
+    .nav-tab.active::before {
+      content: '';
+      position: absolute; inset: 0;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--white-10);
+    }
+
+    /* ══════════════════════════════════════════════════════════════════════════
+       HERO
+    ══════════════════════════════════════════════════════════════════════════ */
+    #hero {
+      width: 100%; max-width: 780px;
+      margin-top: 130px;
+      display: flex; flex-direction: column; align-items: center;
+      text-align: center;
+      gap: 14px;
+    }
+
+    .hero-eyebrow {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 12px;
+      border: 1px solid rgba(48,209,88,0.22);
+      border-radius: var(--radius-pill);
+      background: rgba(48,209,88,0.07);
+      font-size: 11.5px; font-weight: 500; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--green);
+    }
+    .eyebrow-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--green);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%,100% { opacity: 1; transform: scale(1); }
+      50%      { opacity: 0.5; transform: scale(0.75); }
+    }
+
+    .hero-title {
+      font-size: clamp(72px, 12vw, 100px);
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1;
+      background: linear-gradient(160deg, #ffffff 30%, rgba(255,255,255,0.55) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-subtitle {
+      font-size: 20px; font-weight: 400;
+      color: var(--white-40);
+      letter-spacing: -0.01em;
+      max-width: 380px;
+    }
+
+    /* ─── Input Area ─────────────────────────────────────────────────────────── */
+    #input-area {
+      width: 100%; max-width: 680px;
+      margin-top: 36px;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+
+    #input-wrapper {
+      position: relative;
+      background: rgba(255,255,255,0.055);
+      border: 1.5px solid var(--glass-bd);
+      border-radius: 20px;
+      padding: 16px 56px 16px 22px;
+      transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+      display: flex; align-items: center;
+    }
+    #input-wrapper:focus-within {
+      border-color: rgba(48,209,88,0.50);
+      background: rgba(255,255,255,0.07);
+      box-shadow: 0 0 0 4px rgba(48,209,88,0.10), 0 0 60px rgba(48,209,88,0.06);
+    }
+    #input-wrapper.recording {
+      border-color: rgba(255,69,58,0.55);
+      box-shadow: 0 0 0 4px rgba(255,69,58,0.10), 0 0 40px rgba(255,69,58,0.08);
+      animation: recording-flash 1.6s ease-in-out infinite;
+    }
+    @keyframes recording-flash {
+      0%,100% { box-shadow: 0 0 0 4px rgba(255,69,58,0.10), 0 0 40px rgba(255,69,58,0.08); }
+      50%      { box-shadow: 0 0 0 4px rgba(255,69,58,0.20), 0 0 60px rgba(255,69,58,0.15); }
+    }
+
+    #text-input {
+      flex: 1; border: none; background: transparent; outline: none;
+      font-family: inherit; font-size: 16px; font-weight: 400;
+      color: var(--white); caret-color: var(--green);
+    }
+    #text-input::placeholder { color: var(--white-20); }
+
+    #input-actions {
+      position: absolute; right: 10px; top: 50%; translate: 0 -50%;
+      display: flex; align-items: center; gap: 4px;
+    }
+    .input-icon-btn {
+      width: 36px; height: 36px; border-radius: 10px;
+      border: none; background: transparent; cursor: pointer;
+      display: grid; place-items: center;
+      color: var(--white-40);
+      transition: color var(--transition), background var(--transition);
+    }
+    .input-icon-btn:hover { color: var(--white); background: var(--white-06); }
+    .input-icon-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+    #mic-btn.recording {
+      background: rgba(255,69,58,0.18);
+      color: #ff453a;
+    }
+
+    #send-btn {
+      width: 36px; height: 36px; border-radius: 10px;
+      border: none; cursor: pointer;
+      background: var(--green);
+      display: grid; place-items: center;
+      transition: background var(--transition), opacity var(--transition), transform var(--transition);
+    }
+    #send-btn:hover  { background: #3ee06a; transform: scale(1.04); }
+    #send-btn:active { transform: scale(0.97); }
+    #send-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+    #send-btn svg { width: 15px; height: 15px; fill: #000; }
+
+    /* ─── Quick chips ─────────────────────────────────────────────────────────── */
+    #chips {
+      display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+    }
+    .chip {
+      padding: 6px 14px; border-radius: var(--radius-pill);
+      border: 1px solid var(--glass-bd); background: var(--white-04);
+      font-family: inherit; font-size: 12.5px; font-weight: 400;
+      color: var(--white-40); cursor: pointer;
+      transition: color var(--transition), border-color var(--transition), background var(--transition);
+    }
+    .chip:hover {
+      color: var(--white-60);
+      border-color: rgba(255,255,255,0.16);
+      background: var(--white-06);
+    }
+
+    /* ─── Waveform canvas ─────────────────────────────────────────────────────── */
+    #waveform-wrap {
+      width: 100%; max-width: 680px;
+      height: 52px;
+      opacity: 0; transform: translateY(8px);
+      transition: opacity 0.3s, transform 0.3s;
+      pointer-events: none;
+    }
+    #waveform-wrap.visible { opacity: 1; transform: translateY(0); }
+    #waveform { width: 100%; height: 100%; }
+
+    /* ══════════════════════════════════════════════════════════════════════════
+       BASIC MODE — Chat output
+    ══════════════════════════════════════════════════════════════════════════ */
+    #chat-area {
+      width: 100%; max-width: 680px;
+      margin-top: 32px;
+      display: flex; flex-direction: column; gap: 20px;
+    }
+
+    .chat-msg {
+      display: flex; gap: 14px; align-items: flex-start;
+      opacity: 0; transform: translateY(12px);
+      animation: msg-in 0.35s var(--transition) forwards;
+    }
+    @keyframes msg-in {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .chat-avatar {
+      width: 32px; height: 32px; border-radius: 10px; flex-shrink: 0;
+      display: grid; place-items: center;
+      font-size: 14px; font-weight: 700;
+    }
+    .avatar-mercury {
+      background: linear-gradient(135deg, rgba(48,209,88,0.25), rgba(0,199,190,0.25));
+      border: 1px solid rgba(48,209,88,0.25);
+      color: var(--green);
+    }
+    .avatar-user {
+      background: var(--surface);
+      border: 1px solid var(--glass-bd);
+      color: var(--white-60);
+      font-size: 11px;
+    }
+
+    .chat-bubble {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--glass-bd);
+      border-radius: var(--radius-lg);
+      padding: 14px 16px;
+      font-size: 14.5px; line-height: 1.65;
+      color: var(--white-60);
+    }
+    .chat-bubble.user-bubble {
+      color: var(--white);
+      background: rgba(48,209,88,0.07);
+      border-color: rgba(48,209,88,0.15);
+    }
+    .chat-bubble code {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 13px;
+      background: rgba(0,0,0,0.3);
+      padding: 1px 5px; border-radius: 4px;
+      color: var(--teal);
+    }
+    .chat-bubble pre {
+      background: rgba(0,0,0,0.35);
+      border: 1px solid var(--glass-bd);
+      border-radius: 10px;
+      padding: 12px 14px;
+      overflow-x: auto; margin-top: 10px;
+    }
+    .chat-bubble pre code {
+      background: transparent; padding: 0; color: #a8f5c4;
+      font-size: 13px; line-height: 1.6;
+    }
+
+    /* expandable meta detail */
+    .chat-meta {
+      margin-top: 10px;
+      border-top: 1px solid var(--glass-bd);
+      padding-top: 10px;
+    }
+    .meta-toggle {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px; color: var(--white-20);
+      cursor: pointer; user-select: none;
+      transition: color var(--transition);
+    }
+    .meta-toggle:hover { color: var(--white-40); }
+    .meta-toggle svg { width: 13px; height: 13px; transition: transform 0.2s; }
+    .meta-toggle.open svg { transform: rotate(90deg); }
+
+    .meta-content {
+      display: none; margin-top: 8px;
+      font-size: 12px; color: var(--white-30);
+      display: none;
+    }
+    .meta-content.open { display: block; }
+
+    .meta-row { display: flex; gap: 8px; margin-bottom: 4px; }
+    .meta-label { color: var(--white-20); min-width: 90px; }
+    .meta-val   { color: var(--white-40); }
+
+    .intent-pill {
+      display: inline-block; padding: 2px 8px; border-radius: var(--radius-pill);
+      font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+    }
+    .intent-CHAT        { background: rgba(10,132,255,0.18); color: #0a84ff; border:1px solid rgba(10,132,255,0.25); }
+    .intent-CREATE_FILE { background: rgba(48,209,88,0.18);  color: var(--green); border:1px solid rgba(48,209,88,0.25); }
+    .intent-WRITE_CODE  { background: rgba(191,90,242,0.18); color: #bf5af2; border:1px solid rgba(191,90,242,0.25); }
+    .intent-SUMMARIZE   { background: rgba(255,214,10,0.15); color: #ffd60a; border:1px solid rgba(255,214,10,0.25); }
+    .intent-ERROR       { background: rgba(255,69,58,0.15);  color: #ff453a; border:1px solid rgba(255,69,58,0.25); }
+
+    /* ══════════════════════════════════════════════════════════════════════════
+       PIPELINE MODE
+    ══════════════════════════════════════════════════════════════════════════ */
+    #pipeline-view {
+      width: 100%; max-width: 900px;
+      margin-top: 56px;
+      display: none; flex-direction: column; gap: 14px;
+    }
+    #pipeline-view.visible { display: flex; }
+
+    .pipeline-track {
+      display: flex; align-items: stretch;
+      gap: 0;
+      overflow-x: auto; padding-bottom: 4px;
+    }
+    .pipeline-track::-webkit-scrollbar { height: 4px; }
+    .pipeline-track::-webkit-scrollbar-track { background: transparent; }
+    .pipeline-track::-webkit-scrollbar-thumb { background: var(--white-10); border-radius: 2px; }
+
+    .pipe-step {
+      flex: 1; min-width: 150px;
+      background: var(--surface);
+      border: 1px solid var(--glass-bd);
+      border-radius: var(--radius-lg);
+      padding: 16px 18px;
+      display: flex; flex-direction: column; gap: 8px;
+      transition: border-color var(--transition), background var(--transition);
+      position: relative;
+    }
+    .pipe-step.loading { border-color: rgba(10,132,255,0.35); background: rgba(10,132,255,0.05); }
+    .pipe-step.success { border-color: rgba(48,209,88,0.35);  background: rgba(48,209,88,0.05); }
+    .pipe-step.error   { border-color: rgba(255,69,58,0.35);  background: rgba(255,69,58,0.05); }
+
+    .pipe-connector {
+      width: 32px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--white-20); font-size: 16px;
+    }
+
+    .pipe-header {
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .pipe-num {
+      width: 20px; height: 20px; border-radius: 6px;
+      background: var(--white-06);
+      font-size: 10px; font-weight: 600; color: var(--white-20);
+      display: grid; place-items: center;
+    }
+    .pipe-step.loading .pipe-num { background: rgba(10,132,255,0.2); color: #0a84ff; }
+    .pipe-step.success .pipe-num { background: rgba(48,209,88,0.2);  color: var(--green); }
+    .pipe-step.error   .pipe-num { background: rgba(255,69,58,0.2);  color: #ff453a; }
+
+    .pipe-status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--white-10);
+    }
+    .pipe-step.loading .pipe-status-dot {
+      background: #0a84ff;
+      animation: dot-spin 0.9s linear infinite;
+    }
+    .pipe-step.success .pipe-status-dot { background: var(--green); }
+    .pipe-step.error   .pipe-status-dot { background: #ff453a; }
+    @keyframes dot-spin {
+      0%   { box-shadow:  0 -5px 0 rgba(10,132,255,0.5); }
+      50%  { box-shadow:  0  5px 0 rgba(10,132,255,0.5); }
+      100% { box-shadow:  0 -5px 0 rgba(10,132,255,0.5); }
+    }
+
+    .pipe-title {
+      font-size: 11px; font-weight: 600;
+      letter-spacing: 0.07em; text-transform: uppercase;
+      color: var(--white-20);
+    }
+    .pipe-step.loading .pipe-title { color: #0a84ff; }
+    .pipe-step.success .pipe-title { color: var(--green); }
+    .pipe-step.error   .pipe-title { color: #ff453a; }
+
+    .pipe-content {
+      font-size: 12.5px; color: var(--white-40);
+      line-height: 1.5;
+      max-height: 80px; overflow: hidden;
+      display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4;
+      -webkit-box-orient: vertical;
+    }
+
+    /* pipeline output card (full width) */
+    #pipe-output-card {
+      background: var(--surface);
+      border: 1px solid var(--glass-bd);
+      border-radius: var(--radius-xl);
+      padding: 24px 28px;
+      display: none;
+    }
+    #pipe-output-card.visible { display: block; }
+    .pipe-output-label {
+      font-size: 11px; font-weight: 600;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--green); margin-bottom: 12px;
+    }
+    #pipe-output-text {
+      font-size: 14.5px; line-height: 1.65; color: var(--white-60);
+    }
+
+    /* ══════════════════════════════════════════════════════════════════════════
+       SYSTEM + FILES PANELS
+    ══════════════════════════════════════════════════════════════════════════ */
+    .panel-view {
+      width: 100%; max-width: 680px;
+      margin-top: 56px;
+      display: none; flex-direction: column; gap: 14px;
+    }
+    .panel-view.visible { display: flex; }
+
+    .panel-title {
+      font-size: 22px; font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 4px;
+    }
+    .panel-title-sub {
+      font-size: 13px; color: var(--white-40);
+      margin-bottom: 8px;
+    }
+
+    .status-card {
+      display: flex; align-items: center; gap: 16px;
+      background: var(--surface);
+      border: 1px solid var(--glass-bd);
+      border-radius: var(--radius-lg);
+      padding: 18px 22px;
+      transition: border-color var(--transition);
+    }
+    .status-icon {
+      width: 42px; height: 42px; border-radius: 12px;
+      display: grid; place-items: center; font-size: 20px;
+      background: var(--white-06);
+      flex-shrink: 0;
+    }
+    .status-details { flex: 1; }
+    .status-name { font-size: 14px; font-weight: 600; color: var(--white); margin-bottom: 2px; }
+    .status-info { font-size: 12.5px; color: var(--white-40); }
+    .status-badge {
+      padding: 4px 10px; border-radius: var(--radius-pill);
+      font-size: 12px; font-weight: 600;
+    }
+    .badge-ok  { background: rgba(48,209,88,0.15); color: var(--green); border:1px solid rgba(48,209,88,0.25); }
+    .badge-err { background: rgba(255,69,58,0.15);  color: #ff453a;     border:1px solid rgba(255,69,58,0.25); }
+
+    .refresh-btn {
+      align-self: flex-start;
+      padding: 8px 16px;
+      border-radius: var(--radius-pill); border: 1px solid var(--glass-bd);
+      background: var(--white-04); cursor: pointer;
+      font-family: inherit; font-size: 12.5px; color: var(--white-40);
+      transition: color var(--transition), background var(--transition), border-color var(--transition);
+    }
+    .refresh-btn:hover { color: var(--white); background: var(--white-06); border-color: var(--white-10); }
+
+    /* Files */
+    #files-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .file-card {
+      background: var(--surface);
+      border: 1px solid var(--glass-bd);
+      border-radius: var(--radius-lg);
+      padding: 18px 18px 14px;
+      display: flex; flex-direction: column; gap: 10px;
+      cursor: default;
+      transition: border-color var(--transition), transform var(--transition);
+    }
+    .file-card:hover { border-color: var(--white-20); transform: translateY(-2px); }
+
+    .file-icon {
+      width: 36px; height: 36px; border-radius: 10px;
+      display: grid; place-items: center; font-size: 18px;
+      background: var(--white-06);
+    }
+    .file-icon.code { background: rgba(191,90,242,0.12); }
+    .file-icon.text { background: rgba(48,209,88,0.10); }
+
+    .file-name {
+      font-size: 13px; font-weight: 500; color: var(--white);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .file-size { font-size: 11.5px; color: var(--white-20); }
+
+    .file-actions { display: flex; gap: 8px; margin-top: 4px; }
+    .file-btn {
+      flex: 1; padding: 6px 0; border-radius: 8px;
+      border: 1px solid var(--glass-bd); background: var(--white-04);
+      font-family: inherit; font-size: 11.5px; font-weight: 500;
+      color: var(--white-40); cursor: pointer;
+      transition: color var(--transition), background var(--transition);
+    }
+    .file-btn:hover { color: var(--white); background: var(--white-06); }
+
+    .empty-state {
+      text-align: center; padding: 48px 24px;
+      color: var(--white-20); font-size: 14px;
+    }
+    .empty-state-icon { font-size: 36px; margin-bottom: 10px; }
+
+    /* ══════════════════════════════════════════════════════════════════════════
+       HITL MODAL
+    ══════════════════════════════════════════════════════════════════════════ */
+    #modal-overlay {
+      position: fixed; inset: 0; z-index: 2000;
+      background: rgba(0,0,0,0.60);
+      backdrop-filter: blur(12px) saturate(120%);
+      -webkit-backdrop-filter: blur(12px) saturate(120%);
+      display: grid; place-items: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.25s;
+    }
+    #modal-overlay.open { opacity: 1; pointer-events: auto; }
+
+    #modal {
+      width: min(460px, calc(100vw - 40px));
+      background: rgba(14, 16, 14, 0.90);
+      border: 1px solid var(--glass-bd);
+      border-radius: var(--radius-xl);
+      padding: 32px;
+      box-shadow: var(--shadow-lg);
+      transform: scale(0.94) translateY(8px);
+      transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1);
+    }
+    #modal-overlay.open #modal { transform: scale(1) translateY(0); }
+
+    .modal-icon {
+      width: 52px; height: 52px; border-radius: 16px;
+      display: grid; place-items: center; font-size: 24px;
+      background: rgba(255,214,10,0.12);
+      border: 1px solid rgba(255,214,10,0.22);
+      margin-bottom: 20px;
+    }
+    .modal-title {
+      font-size: 19px; font-weight: 600;
+      letter-spacing: -0.02em; margin-bottom: 8px;
+    }
+    .modal-body {
+      font-size: 14px; color: var(--white-40);
+      line-height: 1.6; margin-bottom: 20px;
+    }
+    .modal-detail {
+      background: rgba(0,0,0,0.30);
+      border: 1px solid var(--glass-bd);
+      border-radius: 10px; padding: 12px 14px;
+      font-size: 13px; color: var(--white-40);
+      font-family: 'SF Mono','Fira Code',monospace;
+      margin-bottom: 24px;
+      max-height: 120px; overflow-y: auto;
+    }
+    .modal-actions { display: flex; gap: 10px; }
+
+    .btn-approve {
+      flex: 1; padding: 12px 0;
+      border: none; border-radius: 12px; cursor: pointer;
+      font-family: inherit; font-size: 14px; font-weight: 600;
+      background: var(--green); color: #000;
+      transition: background var(--transition), transform var(--transition), box-shadow var(--transition);
+      box-shadow: 0 0 0 0 rgba(48,209,88,0);
+    }
+    .btn-approve:hover {
+      background: #3ee06a;
+      box-shadow: 0 0 30px rgba(48,209,88,0.35);
+      transform: translateY(-1px);
+    }
+    .btn-cancel {
+      flex: 1; padding: 12px 0;
+      border: 1px solid var(--glass-bd); border-radius: 12px; cursor: pointer;
+      font-family: inherit; font-size: 14px; font-weight: 500;
+      background: var(--white-04); color: var(--white-60);
+      transition: background var(--transition), color var(--transition);
+    }
+    .btn-cancel:hover { background: var(--white-06); color: var(--white); }
+
+    /* ══════════════════════════════════════════════════════════════════════════
+       FILE PREVIEW MODAL
+    ══════════════════════════════════════════════════════════════════════════ */
+    #preview-overlay {
+      position: fixed; inset: 0; z-index: 2100;
+      background: rgba(0,0,0,0.70);
+      backdrop-filter: blur(16px);
+      display: grid; place-items: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.25s;
+    }
+    #preview-overlay.open { opacity: 1; pointer-events: auto; }
+
+    #preview-modal {
+      width: min(680px, calc(100vw - 40px));
+      max-height: 70vh;
+      background: rgba(12,14,12,0.95);
+      border: 1px solid var(--glass-bd);
+      border-radius: var(--radius-xl);
+      display: flex; flex-direction: column;
+      transform: scale(0.95); transition: transform 0.28s cubic-bezier(0.34,1.4,0.64,1);
+      box-shadow: var(--shadow-lg);
+    }
+    #preview-overlay.open #preview-modal { transform: scale(1); }
+
+    .preview-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--glass-bd);
+    }
+    .preview-title { font-size: 14px; font-weight: 600; color: var(--white); }
+    .preview-close {
+      width: 28px; height: 28px; border-radius: 8px;
+      border: none; background: var(--white-06); cursor: pointer;
+      display: grid; place-items: center; color: var(--white-40);
+      font-size: 16px; transition: background var(--transition), color var(--transition);
+    }
+    .preview-close:hover { background: var(--white-10); color: var(--white); }
+
+    #preview-code {
+      flex: 1; overflow-y: auto; padding: 20px 24px;
+      font-family: 'SF Mono','Fira Code',monospace;
+      font-size: 13px; line-height: 1.65; color: #a8f5c4;
+      white-space: pre-wrap; word-break: break-word;
+    }
+
+    /* ─── Processing spinner ─────────────────────────────────────────────────── */
+    #processing-bar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 3000;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--green), var(--teal), var(--green), transparent);
+      background-size: 200% 100%;
+      animation: progress-bar 1.4s linear infinite;
+      opacity: 0; transition: opacity 0.2s;
+    }
+    #processing-bar.running { opacity: 1; }
+    @keyframes progress-bar {
+      0%   { background-position: 100% 0; }
+      100% { background-position: -100% 0; }
+    }
+
+    /* ─── Toast notifications ────────────────────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 32px; left: 50%; translate: -50% 0;
+      z-index: 5000;
+      padding: 10px 18px; border-radius: var(--radius-pill);
+      background: rgba(20,22,20,0.88);
+      border: 1px solid var(--glass-bd);
+      backdrop-filter: blur(20px);
+      font-size: 13.5px; color: var(--white-60);
+      box-shadow: var(--shadow-md);
+      opacity: 0; transform: translateY(8px);
+      transition: opacity 0.25s, transform 0.25s;
+      pointer-events: none;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+
+    /* ─── Scrollbar ──────────────────────────────────────────────────────────── */
+    * { scrollbar-width: thin; scrollbar-color: var(--white-10) transparent; }
+    *::-webkit-scrollbar { width: 5px; }
+    *::-webkit-scrollbar-track { background: transparent; }
+    *::-webkit-scrollbar-thumb { background: var(--white-10); border-radius: 3px; }
+
+    /* ─── Live transcription UI ─────────────────────────────────────────────── */
+    /* "Transcribing…" animated dots while Whisper processes  */
+    .transcribing-label {
+      display: inline-flex; align-items: center; gap: 6px;
+      color: var(--white-40); font-style: italic;
+    }
+    .trans-dots::after {
+      content: '';
+      animation: dot-cycle 1.2s steps(4, end) infinite;
+    }
+    @keyframes dot-cycle {
+      0%   { content: ''; }
+      25%  { content: '.'; }
+      50%  { content: '..'; }
+      75%  { content: '...'; }
+      100% { content: ''; }
+    }
+
+    /* "🎙️ Heard:" label prefix */
+    .heard-label {
+      font-size: 11px; font-weight: 600;
+      letter-spacing: 0.04em; color: var(--green);
+      margin-right: 4px;
+      opacity: 0.85;
+    }
+
+    /* Smooth fade-in when transcription text replaces the spinner */
+    .trans-reveal {
+      animation: trans-in 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+    @keyframes trans-in {
+      from { opacity: 0.3; transform: translateY(4px); }
+      to   { opacity: 1;   transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Progress bar -->
+<div id="processing-bar"></div>
+
+<!-- Background -->
+<div class="bg-glow"></div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- ═══════════════════ NAVBAR ═════════════════════════════════════════════ -->
+<nav id="navbar">
+  <div class="nav-logo">
+    <div class="nav-logo-icon">M</div>
+    Mercury
+  </div>
+  <button class="nav-tab active" data-mode="basic">Basic Mode</button>
+  <button class="nav-tab" data-mode="pipeline">Pipeline</button>
+  <button class="nav-tab" data-mode="system">System</button>
+  <button class="nav-tab" data-mode="files">Files</button>
+</nav>
+
+<!-- ═══════════════════ APP ════════════════════════════════════════════════ -->
+<div id="app">
+
+  <!-- ── Hero ─────────────────────────────────────────────────── -->
+  <section id="hero">
+    <div class="hero-eyebrow">
+      <div class="eyebrow-dot"></div>
+      Local · Private · Offline
+    </div>
+    <h1 class="hero-title">Mercury</h1>
+    <p class="hero-subtitle">Local Voice AI Agent</p>
+
+    <!-- Input -->
+    <div id="input-area">
+      <div id="input-wrapper">
+        <input id="text-input" type="text"
+               placeholder="What do you want to do?"
+               autocomplete="off" spellcheck="false" />
+        <div id="input-actions">
+          <!-- Upload -->
+          <button class="input-icon-btn" id="upload-btn" title="Upload audio file">
+            <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          </button>
+          <input id="file-input" type="file" accept="audio/*" hidden />
+          <!-- Mic -->
+          <button class="input-icon-btn" id="mic-btn" title="Record voice">
+            <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          </button>
+          <!-- Send -->
+          <button id="send-btn" title="Process" disabled>
+            <svg viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Waveform -->
+      <div id="waveform-wrap">
+        <canvas id="waveform"></canvas>
+      </div>
+
+      <!-- Quick chips -->
+      <div id="chips">
+        <button class="chip" data-text="Create a file called notes.txt">📄 Create a file</button>
+        <button class="chip" data-text="Write a Python script to sort a list">💻 Write code</button>
+        <button class="chip" data-text="Summarize this: ">📝 Summarize text</button>
+        <button class="chip" data-text="Hello Mercury, what can you do?">💬 Say hello</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Basic Mode: Chat area ─────────────────────────────────── -->
+  <div id="chat-area"></div>
+
+  <!-- ── Pipeline Mode ─────────────────────────────────────────── -->
+  <section id="pipeline-view">
+    <div class="pipeline-track" id="pipeline-track">
+      <!-- Steps injected by JS -->
+    </div>
+    <div id="pipe-output-card">
+      <div class="pipe-output-label">⚡ Final Output</div>
+      <div id="pipe-output-text"></div>
+    </div>
+  </section>
+
+  <!-- ── System Panel ──────────────────────────────────────────── -->
+  <section id="system-panel" class="panel-view">
+    <div>
+      <div class="panel-title">System Status</div>
+      <div class="panel-title-sub">Live status of Mercury's AI components</div>
+    </div>
+    <div id="sys-cards"></div>
+    <button class="refresh-btn" id="refresh-status-btn">↻ Refresh</button>
+  </section>
+
+  <!-- ── Files Panel ───────────────────────────────────────────── -->
+  <section id="files-panel" class="panel-view">
+    <div>
+      <div class="panel-title">Generated Files</div>
+      <div class="panel-title-sub">All files created by Mercury in <code style="font-size:11px;color:var(--green)">output/</code></div>
+    </div>
+    <div id="files-grid"></div>
+    <button class="refresh-btn" id="refresh-files-btn">↻ Refresh</button>
+  </section>
+
+</div><!-- #app -->
+
+<!-- ══════ HITL MODAL ══════════════════════════════════════════════════════ -->
+<div id="modal-overlay">
+  <div id="modal">
+    <div class="modal-icon">⚠️</div>
+    <div class="modal-title">Confirm Action</div>
+    <div class="modal-body">Mercury wants to execute the following operation. Review and approve to proceed.</div>
+    <div class="modal-detail" id="modal-detail">—</div>
+    <div class="modal-actions">
+      <button class="btn-approve" id="btn-approve">✓ Approve</button>
+      <button class="btn-cancel"  id="btn-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ FILE PREVIEW MODAL ═════════════════════════════════════════════ -->
+<div id="preview-overlay">
+  <div id="preview-modal">
+    <div class="preview-header">
+      <span class="preview-title" id="preview-filename"></span>
+      <button class="preview-close" id="preview-close">✕</button>
+    </div>
+    <pre id="preview-code"></pre>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   Mercury Web App — vanilla JS
+   FIX: All audio is re-encoded to WAV (PCM16, 16 kHz, mono) in the browser
+   before upload. This removes the ffmpeg dependency from the server entirely.
+═══════════════════════════════════════════════════════════════════════════ */
+
+// ── WAV encoder (browser-side) ─────────────────────────────────────────────
+// Decodes any browser audio blob via AudioContext and writes a standard WAV.
+// Whisper's optimal input is 16 kHz mono — we downsample here.
+async function blobToWav(blob) {
+  const TARGET_RATE = 16000;
+  const arrayBuf    = await blob.arrayBuffer();
+
+  // Decode compressed audio (webm/ogg/mp4) to raw PCM float32
+  const decodeCtx   = new AudioContext({ sampleRate: TARGET_RATE });
+  let audioBuf;
+  try {
+    audioBuf = await decodeCtx.decodeAudioData(arrayBuf);
+  } finally {
+    decodeCtx.close().catch(() => {});
+  }
+
+  // Mix to mono (average all channels)
+  const numFrames = audioBuf.length;
+  const mono      = new Float32Array(numFrames);
+  for (let c = 0; c < audioBuf.numberOfChannels; c++) {
+    const ch = audioBuf.getChannelData(c);
+    for (let i = 0; i < numFrames; i++) mono[i] += ch[i];
+  }
+  const scale = 1 / audioBuf.numberOfChannels;
+  for (let i = 0; i < numFrames; i++) mono[i] *= scale;
+
+  // Build WAV: RIFF/WAVE header + 16-bit PCM samples
+  const bytesPerSample = 2;
+  const dataBytes      = numFrames * bytesPerSample;
+  const buf  = new ArrayBuffer(44 + dataBytes);
+  const view = new DataView(buf);
+
+  function writeStr(offset, str) {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  }
+  writeStr(0,  'RIFF');
+  view.setUint32(4,  36 + dataBytes,            true);  // chunk size
+  writeStr(8,  'WAVE');
+  writeStr(12, 'fmt ');
+  view.setUint32(16, 16,                        true);  // PCM sub-chunk size
+  view.setUint16(20, 1,                         true);  // PCM format
+  view.setUint16(22, 1,                         true);  // 1 channel (mono)
+  view.setUint32(24, TARGET_RATE,               true);  // sample rate
+  view.setUint32(28, TARGET_RATE * bytesPerSample, true); // byte rate
+  view.setUint16(32, bytesPerSample,            true);  // block align
+  view.setUint16(34, 16,                        true);  // bits per sample
+  writeStr(36, 'data');
+  view.setUint32(40, dataBytes,                 true);
+
+  // Write samples (clamp to [-1, 1] then scale to Int16 range)
+  let off = 44;
+  for (let i = 0; i < numFrames; i++) {
+    const s = Math.max(-1, Math.min(1, mono[i]));
+    view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    off += 2;
+  }
+
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+// ── State ──────────────────────────────────────────────────────────────────
+const S = {
+  mode:       'basic',   // basic | pipeline | system | files
+  recording:  false,
+  processing: false,
+  audioBlob:  null,      // always a WAV blob after encoding
+  sessionId:  'mercury_' + Math.random().toString(36).slice(2, 9),
+  pendingIntent: null,
+  pipeline: { transcription: null, intent: null, confidence: null, action: null, output: null },
+};
+
+// ── DOM refs ───────────────────────────────────────────────────────────────
+const $  = id => document.getElementById(id);
+const $$ = sel => document.querySelectorAll(sel);
+
+const inputWrap   = $('input-wrapper');
+const textInput   = $('text-input');
+const sendBtn     = $('send-btn');
+const micBtn      = $('mic-btn');
+const uploadBtn   = $('upload-btn');
+const fileInput   = $('file-input');
+const waveWrap    = $('waveform-wrap');
+const waveCanvas  = $('waveform');
+const chatArea    = $('chat-area');
+const pipeView    = $('pipeline-view');
+const pipeTrack   = $('pipeline-track');
+const pipeOutCard = $('pipe-output-card');
+const pipeOutText = $('pipe-output-text');
+const sysPanel    = $('system-panel');
+const filesPanel  = $('files-panel');
+const modal       = $('modal-overlay');
+const modalDetail = $('modal-detail');
+const btnApprove  = $('btn-approve');
+const btnCancel   = $('btn-cancel');
+const progressBar = $('processing-bar');
+const toast       = $('toast');
+const previewOvr  = $('preview-overlay');
+const previewFn   = $('preview-filename');
+const previewCode = $('preview-code');
+const previewCls  = $('preview-close');
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+let _toastTimer;
+function showToast(msg, duration = 3000) {
+  toast.textContent = msg; toast.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => toast.classList.remove('show'), duration);
+}
+
+// ── Progress bar ───────────────────────────────────────────────────────────
+function setProcessing(on) {
+  S.processing = on;
+  progressBar.classList.toggle('running', on);
+  sendBtn.disabled = on || (!S.audioBlob && !textInput.value.trim());
+}
+
+// ── Mode switching ─────────────────────────────────────────────────────────
+$$('.nav-tab').forEach(tab => tab.addEventListener('click', () => {
+  const mode = tab.dataset.mode;
+  $$('.nav-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  S.mode = mode;
+
+  // Show/hide sections
+  chatArea.style.display    = mode === 'basic'    ? 'flex'  : 'none';
+  pipeView.classList.toggle ('visible', mode === 'pipeline');
+  sysPanel.classList.toggle ('visible', mode === 'system');
+  filesPanel.classList.toggle('visible', mode === 'files');
+
+  if (mode === 'system') loadStatus();
+  if (mode === 'files')  loadFiles();
+}));
+
+// ── Input enable/disable ───────────────────────────────────────────────────
+textInput.addEventListener('input', () => {
+  sendBtn.disabled = S.processing || (!S.audioBlob && !textInput.value.trim());
+});
+
+// ── Quick chips ───────────────────────────────────────────────────────────
+$$('.chip').forEach(chip => chip.addEventListener('click', () => {
+  textInput.value = chip.dataset.text;
+  textInput.focus();
+  sendBtn.disabled = false;
+}));
+
+// ── File upload ────────────────────────────────────────────────────────────
+uploadBtn.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', async () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+  showToast('🔄 Converting audio to WAV …');
+  try {
+    S.audioBlob = await blobToWav(file);
+    sendBtn.disabled = false;
+    showToast(`📎 Audio ready: ${file.name}`);
+  } catch (err) {
+    console.error('Upload conversion failed:', err);
+    showToast('⚠️ Could not decode audio file. Try a .wav or .mp3 file.');
+  }
+  fileInput.value = '';
+});
+
+// ── Microphone recording ───────────────────────────────────────────────────
+// Strategy: capture raw MediaRecorder chunks, then on stop re-encode to
+// WAV (16 kHz mono PCM) via blobToWav(). This avoids ANY server-side ffmpeg.
+let mediaRecorder, audioChunks = [], vizCtx, analyser, animId, micStream;
+
+async function startRecording() {
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true },
+      video: false,
+    });
+
+    // Choose the best supported MIME type
+    const mimeType = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/ogg;codecs=opus',
+      'audio/mp4',
+    ].find(t => MediaRecorder.isTypeSupported(t)) || '';
+
+    mediaRecorder = new MediaRecorder(micStream, mimeType ? { mimeType } : {});
+    audioChunks   = [];
+
+    // Separate AudioContext just for visualisation (don't affect recording)
+    vizCtx   = new AudioContext();
+    analyser = vizCtx.createAnalyser();
+    analyser.fftSize = 128;
+    vizCtx.createMediaStreamSource(micStream).connect(analyser);
+    drawWaveform();
+
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+
+    // On stop: re-encode the raw compressed chunks to WAV in the browser
+    mediaRecorder.onstop = async () => {
+      micBtn.disabled = true;
+      inputWrap.classList.add('recording'); // keep visual while encoding
+      const rawBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+
+      if (rawBlob.size < 1000) {
+        showToast('⚠️ Recording too short — no audio captured. Try holding the mic button longer.');
+        micBtn.disabled = false;
+        inputWrap.classList.remove('recording');
+        return;
+      }
+
+      try {
+        showToast('🔄 Encoding audio …');
+        S.audioBlob = await blobToWav(rawBlob);
+        sendBtn.disabled = false;
+        showToast('🎙️ Recording ready — click ⚡ to process');
+      } catch (err) {
+        console.error('WAV encoding failed:', err);
+        showToast('⚠️ Audio encoding failed: ' + err.message);
+      } finally {
+        micBtn.disabled = false;
+        inputWrap.classList.remove('recording');
+      }
+    };
+
+    mediaRecorder.start(100); // collect data in 100 ms chunks
+    S.recording = true;
+    inputWrap.classList.add('recording');
+    waveWrap.classList.add('visible');
+    micBtn.classList.add('recording');
+    micBtn.title = 'Stop recording';
+  } catch (err) {
+    if (err.name === 'NotAllowedError') {
+      showToast('⚠️ Microphone access denied. Allow mic in browser settings and reload.');
+    } else {
+      showToast('⚠️ Could not start recording: ' + err.message);
+    }
+    console.error(err);
+  }
+}
+
+function stopRecording() {
+  if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+  mediaRecorder.stop();
+  S.recording = false;
+  micBtn.classList.remove('recording');
+  micBtn.title = 'Record voice';
+  cancelAnimationFrame(animId);
+  if (vizCtx) vizCtx.close().catch(() => {});
+  if (micStream) micStream.getTracks().forEach(t => t.stop());
+  // waveform stays visible until encoding finishes
+}
+
+micBtn.addEventListener('click', () => {
+  S.recording ? stopRecording() : startRecording();
+});
+
+// ── Waveform ───────────────────────────────────────────────────────────────
+function drawWaveform() {
+  const ctx  = waveCanvas.getContext('2d');
+  const data = new Uint8Array(analyser.frequencyBinCount);
+
+  function render() {
+    animId = requestAnimationFrame(render);
+    analyser.getByteFrequencyData(data);
+
+    const W = waveCanvas.offsetWidth, H = waveCanvas.offsetHeight;
+    waveCanvas.width = W; waveCanvas.height = H;
+    ctx.clearRect(0, 0, W, H);
+
+    const bars  = data.length;
+    const space = 2;
+    const bw    = (W - space * (bars - 1)) / bars;
+
+    for (let i = 0; i < bars; i++) {
+      const v   = data[i] / 255;
+      const bh  = Math.max(3, v * H * 0.85);
+      const x   = i * (bw + space);
+      const y   = (H - bh) / 2;
+      const alpha = 0.3 + v * 0.7;
+      ctx.fillStyle = `rgba(48, 209, 88, ${alpha})`;
+      ctx.beginPath();
+      ctx.roundRect(x, y, bw, bh, bw / 2);
+      ctx.fill();
+    }
+  }
+  render();
+}
+
+// ── Send / process ─────────────────────────────────────────────────────────
+sendBtn.addEventListener('click', processInput);
+textInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey && !sendBtn.disabled) { e.preventDefault(); processInput(); }
+});
+
+async function processInput() {
+  const textVal = textInput.value.trim();
+  if (!textVal && !S.audioBlob) return;
+
+  setProcessing(true);
+  waveWrap.classList.remove('visible');
+  resetPipeline();
+
+  // Show user message in chat — placeholder for voice, real text for typed
+  const isVoice  = !!S.audioBlob && !textVal;
+  const userBubble = addUserMsg(textVal || null, isVoice);
+  textInput.value = '';
+
+  try {
+    let transcription = textVal;
+
+    // ── Step 1: Transcribe (only if audio blob present) ──────────────────
+    if (S.audioBlob) {
+      if (S.audioBlob.size < 500) {
+        addMercuryMsg('⚠️ The audio clip is too short or empty. Please record again.', null);
+        setProcessing(false); S.audioBlob = null; return;
+      }
+
+      setPipeStep('audio', 'loading', `WAV ready (${(S.audioBlob.size/1024).toFixed(1)} KB)`);
+      setPipeStep('transcription', 'loading', 'Transcribing with Whisper …');
+
+      const fd = new FormData();
+      // Always send as .wav — blobToWav() already encoded it
+      fd.append('audio', S.audioBlob, 'recording.wav');
+      const resp = await fetch('/api/transcribe', { method: 'POST', body: fd });
+      const data = await resp.json();
+
+      if (!data.success) {
+        setPipeStep('audio',         'success', 'Done');
+        setPipeStep('transcription', 'error',   data.error || 'No speech detected');
+        addMercuryMsg('⚠️ ' + (data.error || 'Mercury couldn\'t detect any speech. Try speaking more clearly or check your mic.'), null);
+        setProcessing(false); S.audioBlob = null; return;
+      }
+
+      transcription = data.transcription;
+      // ✅ Update the user bubble with what was actually heard
+      updateUserMsgTranscription(userBubble, transcription);
+      setPipeStep('audio',         'success', 'Audio captured');
+      setPipeStep('transcription', 'success', transcription);
+      S.audioBlob = null;
+    } else {
+      setPipeStep('audio',         'success', 'Text input');
+      setPipeStep('transcription', 'success', transcription);
+    }
+
+    S.pipeline.transcription = transcription;
+
+    // ── Step 2: Classify intent ───────────────────────────────────────────
+    setPipeStep('intent', 'loading', 'Classifying …');
+    const cResp = await fetch('/api/classify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transcription, session_id: S.sessionId }),
+    });
+    const cData = await cResp.json();
+
+    S.pipeline.intent     = cData.intent;
+    S.pipeline.confidence = cData.confidence;
+    S.pipeline.parameters = cData.parameters;
+
+    const pct = Math.round((cData.confidence || 0.5) * 100);
+    setPipeStep('intent', 'success', `${cData.intent} · ${pct}% confidence`);
+
+    // ── Step 3: HITL gate or execute ─────────────────────────────────────
+    if (cData.requires_confirmation) {
+      setProcessing(false);
+      S.pendingIntent = { intent: cData.intent, transcription, parameters: cData.parameters };
+      showModal(cData.intent, transcription, cData.parameters);
+      return;
+    }
+
+    await executeAction(cData.intent, transcription, cData.parameters);
+
+  } catch (err) {
+    console.error(err);
+    addMercuryMsg('⚠️ Something went wrong. Is the Mercury backend running?', null, 'error');
+    setProcessing(false);
+  }
+}
+
+// ── Execute action ─────────────────────────────────────────────────────────
+async function executeAction(intent, transcription, parameters) {
+  setProcessing(true);
+  setPipeStep('action', 'loading', `Executing ${intent} …`);
+
+  try {
+    const resp = await fetch('/api/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ intent, transcription, parameters, session_id: S.sessionId }),
+    });
+    const data = await resp.json();
+
+    const status = data.success ? 'success' : 'error';
+    setPipeStep('action', status, intent.replace('_', ' '));
+    setPipeStep('output', status, data.output?.slice(0, 140) || '—');
+
+    // Pipeline output full text
+    pipeOutText.innerHTML = formatOutput(data.output, data.code_preview, data.language);
+    pipeOutCard.classList.add('visible');
+
+    // Chat bubble
+    addMercuryMsg(data.output, {
+      transcription,
+      intent,
+      confidence: S.pipeline.confidence,
+      code: data.code_preview,
+      lang: data.language,
+    }, status);
+
+    if (S.mode === 'files') loadFiles();
+
+  } catch (err) {
+    console.error(err);
+    setPipeStep('action', 'error', 'Failed');
+    addMercuryMsg('⚠️ Execution failed. Check the terminal for details.', null, 'error');
+  } finally {
+    setProcessing(false);
+  }
+}
+
+// ── HITL Modal ─────────────────────────────────────────────────────────────
+function showModal(intent, transcription, parameters) {
+  const fname = parameters.filename || '(auto-named)';
+  const lang  = parameters.language || '';
+  modalDetail.textContent =
+    `Intent: ${intent}\n` +
+    `Request: "${transcription}"\n` +
+    (fname !== '(auto-named)' ? `File: ${fname}\n` : '') +
+    (lang  ? `Language: ${lang}` : '');
+  modal.classList.add('open');
+}
+function closeModal() { modal.classList.remove('open'); }
+
+btnApprove.addEventListener('click', async () => {
+  closeModal();
+  if (!S.pendingIntent) return;
+  const { intent, transcription, parameters } = S.pendingIntent;
+  S.pendingIntent = null;
+  await executeAction(intent, transcription, parameters);
+});
+
+btnCancel.addEventListener('click', () => {
+  closeModal();
+  addMercuryMsg('Action cancelled. No files were modified.', null);
+  setProcessing(false);
+  S.pendingIntent = null;
+});
+
+modal.addEventListener('click', e => { if (e.target === modal) { btnCancel.click(); } });
+
+// ── Add / update chat messages ─────────────────────────────────────────────
+function addUserMsg(text, isVoice = false) {
+  const div = document.createElement('div');
+  div.className = 'chat-msg';
+  // For voice input, show a subtle spinner while transcribing
+  const content = isVoice
+    ? `<span class="transcribing-label">🎙️ <span class="trans-dots">Transcribing</span></span>`
+    : escHtml(text);
+  div.innerHTML = `
+    <div class="chat-avatar avatar-user">You</div>
+    <div class="chat-bubble user-bubble" id="ub-${div._uid = Date.now()}">${content}</div>
+  `;
+  chatArea.appendChild(div);
+  div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  return div; // caller can update later
+}
+
+// Reveals the real transcription text inside a previously-created user bubble
+function updateUserMsgTranscription(msgDiv, transcription) {
+  const bubble = msgDiv.querySelector('.chat-bubble');
+  if (!bubble) return;
+  bubble.classList.add('trans-reveal');
+  bubble.innerHTML = `
+    <span class="heard-label">🎙️ Heard:</span> ${escHtml(transcription)}
+  `;
+}
+
+function addMercuryMsg(output, meta, status = 'success') {
+  const div = document.createElement('div');
+  div.className = 'chat-msg';
+
+  const intentPill = meta?.intent
+    ? `<span class="intent-pill intent-${meta.intent}">${meta.intent.replace('_',' ')}</span>`
+    : '';
+
+  let codeBlock = '';
+  if (meta?.code) {
+    codeBlock = `<pre><code class="lang-${meta.lang||'text'}">${escHtml(meta.code)}</code></pre>`;
+  }
+
+  const metaHTML = meta ? `
+    <div class="chat-meta">
+      <div class="meta-toggle" onclick="toggleMeta(this)">
+        <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+        Details
+      </div>
+      <div class="meta-content">
+        ${meta.transcription ? `<div class="meta-row"><span class="meta-label">Transcription</span><span class="meta-val">"${escHtml(meta.transcription)}"</span></div>` : ''}
+        ${meta.intent ? `<div class="meta-row"><span class="meta-label">Intent</span><span class="meta-val">${intentPill}</span></div>` : ''}
+        ${meta.confidence ? `<div class="meta-row"><span class="meta-label">Confidence</span><span class="meta-val">${Math.round(meta.confidence*100)}%</span></div>` : ''}
+      </div>
+    </div>` : '';
+
+  div.innerHTML = `
+    <div class="chat-avatar avatar-mercury">M</div>
+    <div class="chat-bubble">
+      <div>${formatOutput(output, meta?.code ? '' : null)}</div>
+      ${codeBlock}
+      ${metaHTML}
+    </div>
+  `;
+  chatArea.appendChild(div);
+  div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function toggleMeta(el) {
+  el.classList.toggle('open');
+  el.nextElementSibling.classList.toggle('open');
+}
+
+// ── Output formatter ───────────────────────────────────────────────────────
+function formatOutput(text, codePrev, lang) {
+  if (!text) return '';
+  // Replace markdown bold
+  let html = escHtml(text)
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\n/g, '<br>');
+  return html;
+}
+
+function escHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Pipeline step helpers ──────────────────────────────────────────────────
+const PIPE_STEPS = [
+  { key: 'audio',         label: 'Audio Input',      num: '1' },
+  { key: 'transcription', label: 'Transcription',    num: '2' },
+  { key: 'intent',        label: 'Intent Detection', num: '3' },
+  { key: 'action',        label: 'Action',           num: '4' },
+  { key: 'output',        label: 'Output',           num: '5' },
+];
+
+function resetPipeline() {
+  pipeTrack.innerHTML = '';
+  pipeOutCard.classList.remove('visible');
+  pipeOutText.innerHTML = '';
+
+  PIPE_STEPS.forEach((step, i) => {
+    const stepEl = document.createElement('div');
+    stepEl.className = 'pipe-step';
+    stepEl.id = `pipe-${step.key}`;
+    stepEl.innerHTML = `
+      <div class="pipe-header">
+        <div class="pipe-num">${step.num}</div>
+        <div class="pipe-status-dot"></div>
+      </div>
+      <div class="pipe-title">${step.label}</div>
+      <div class="pipe-content" id="pipe-content-${step.key}">Waiting …</div>
+    `;
+    pipeTrack.appendChild(stepEl);
+
+    if (i < PIPE_STEPS.length - 1) {
+      const conn = document.createElement('div');
+      conn.className = 'pipe-connector';
+      conn.textContent = '›';
+      pipeTrack.appendChild(conn);
+    }
+  });
+}
+
+function setPipeStep(key, status, content) {
+  const el = $(`pipe-${key}`);
+  if (!el) return;
+  el.className = `pipe-step ${status}`;
+  const cont = $(`pipe-content-${key}`);
+  if (cont) cont.textContent = content || '';
+}
+
+// ── System status ──────────────────────────────────────────────────────────
+async function loadStatus() {
+  const cards = $('sys-cards');
+  cards.innerHTML = '<div style="color:var(--white-20);font-size:13px">Loading …</div>';
+  try {
+    const resp = await fetch('/api/status');
+    const data = await resp.json();
+
+    const ollamaOk = data.ollama?.connected;
+    const whisper  = data.whisper?.backend || 'Unknown';
+
+    cards.innerHTML = `
+      <div class="status-card">
+        <div class="status-icon">🦙</div>
+        <div class="status-details">
+          <div class="status-name">Ollama</div>
+          <div class="status-info">Model: ${data.ollama?.model || '—'}</div>
+        </div>
+        <span class="status-badge ${ollamaOk ? 'badge-ok' : 'badge-err'}">
+          ${ollamaOk ? '● Connected' : '◌ Offline'}
+        </span>
+      </div>
+      <div class="status-card">
+        <div class="status-icon">🎙</div>
+        <div class="status-details">
+          <div class="status-name">Whisper STT</div>
+          <div class="status-info">${whisper}</div>
+        </div>
+        <span class="status-badge badge-ok">● Ready</span>
+      </div>
+      <div class="status-card">
+        <div class="status-icon">📁</div>
+        <div class="status-details">
+          <div class="status-name">Output Sandbox</div>
+          <div class="status-info">${data.output_dir || 'output/'}</div>
+        </div>
+        <span class="status-badge badge-ok">● Sandboxed</span>
+      </div>
+    `;
+  } catch {
+    cards.innerHTML = '<div style="color:#ff453a;font-size:13px">⚠️ Could not reach Mercury backend.</div>';
+  }
+}
+
+$('refresh-status-btn').addEventListener('click', loadStatus);
+
+// ── Files ──────────────────────────────────────────────────────────────────
+const EXT_ICONS = {
+  py:'🐍', js:'⚡', ts:'🔷', html:'🌐', css:'🎨',
+  rs:'🦀', go:'🐹', java:'☕', cpp:'⚙️', c:'⚙️',
+  sh:'💻', sql:'🗄️', md:'📖', txt:'📄', json:'📋',
+};
+
+async function loadFiles() {
+  const grid = $('files-grid');
+  grid.innerHTML = '<div style="color:var(--white-20);font-size:13px">Loading …</div>';
+  try {
+    const resp = await fetch('/api/files');
+    const data = await resp.json();
+    const files = data.files || [];
+
+    if (!files.length) {
+      grid.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">📂</div>
+          No files yet.<br>Ask Mercury to create one!
+        </div>`;
+      return;
+    }
+
+    grid.innerHTML = '';
+    files.forEach(f => {
+      const ext  = f.ext || 'txt';
+      const icon = EXT_ICONS[ext] || (f.type === 'code' ? '💻' : '📄');
+      const kb   = (f.size / 1024).toFixed(1);
+      const card = document.createElement('div');
+      card.className = 'file-card';
+      card.innerHTML = `
+        <div class="file-icon ${f.type}">${icon}</div>
+        <div class="file-name" title="${f.name}">${f.name}</div>
+        <div class="file-size">${kb} KB</div>
+        <div class="file-actions">
+          <button class="file-btn" onclick="previewFile('${f.name}')">Preview</button>
+          <a href="/api/files/${encodeURIComponent(f.name)}/download" download>
+            <button class="file-btn" style="width:100%">Download</button>
+          </a>
+        </div>
+      `;
+      grid.appendChild(card);
+    });
+  } catch {
+    grid.innerHTML = '<div style="color:#ff453a;font-size:13px">⚠️ Could not load files.</div>';
+  }
+}
+
+$('refresh-files-btn').addEventListener('click', loadFiles);
+
+// ── File preview ───────────────────────────────────────────────────────────
+async function previewFile(name) {
+  previewFn.textContent = name;
+  previewCode.textContent = 'Loading …';
+  previewOvr.classList.add('open');
+  try {
+    const resp = await fetch(`/api/files/${encodeURIComponent(name)}/preview`);
+    const data = await resp.json();
+    previewCode.textContent = data.content;
+  } catch {
+    previewCode.textContent = '⚠️ Could not load file.';
+  }
+}
+previewCls.addEventListener('click', () => previewOvr.classList.remove('open'));
+previewOvr.addEventListener('click', e => { if (e.target === previewOvr) previewOvr.classList.remove('open'); });
+
+// ── Init ───────────────────────────────────────────────────────────────────
+(function init() {
+  resetPipeline();
+  // default: basic mode — show chat, hide others
+  chatArea.style.display = 'flex';
+
+  // Add the welcome message
+  const welcomeDiv = document.createElement('div');
+  welcomeDiv.className = 'chat-msg';
+  welcomeDiv.innerHTML = `
+    <div class="chat-avatar avatar-mercury">M</div>
+    <div class="chat-bubble">
+      Hello! I'm <strong>Mercury</strong> — your local, private AI voice agent.<br><br>
+      I can <span class="intent-pill intent-CREATE_FILE">create files</span>&nbsp;
+      <span class="intent-pill intent-WRITE_CODE">write code</span>&nbsp;
+      <span class="intent-pill intent-SUMMARIZE">summarize text</span>&nbsp;
+      <span class="intent-pill intent-CHAT">or just chat</span>.<br><br>
+      Type a command, choose a quick prompt below, or click the mic to speak.
+    </div>
+  `;
+  chatArea.appendChild(welcomeDiv);
+})();
+</script>
+</body>
+</html>
