@@ -1,0 +1,28 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Project Mercury — Python Dependencies
+# Optimised for: Apple M1 (8 GB unified memory), macOS, Python 3.14
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── UI ────────────────────────────────────────────────────────────────────────
+streamlit>=1.35.0
+
+# ── Speech-to-Text ────────────────────────────────────────────────────────────
+# Primary: MLX Whisper — Apple Silicon / Neural Engine (fast, low RAM)
+mlx-whisper>=0.4.1
+huggingface-hub>=0.23.0          # model download from HF Hub
+
+# Fallback (uncomment if mlx-whisper fails on your Python version):
+# openai-whisper>=20231117
+
+# ── Ollama LLM client ─────────────────────────────────────────────────────────
+ollama>=0.2.1
+
+# ── Audio utilities ───────────────────────────────────────────────────────────
+pydub>=0.25.1                    # MP3/webm → WAV conversion (needs brew ffmpeg)
+soundfile>=0.12.1                # WAV I/O
+
+# ── Core numerics ─────────────────────────────────────────────────────────────
+numpy>=1.26.0
+
+# ── Environment / config ──────────────────────────────────────────────────────
+python-dotenv>=1.0.1

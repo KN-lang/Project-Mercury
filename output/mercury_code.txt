@@ -1,0 +1,2 @@
+def write_a_code_for_me_in_chat():
+    return "write_a_code_for_me_in_chat"
