@@ -2,12 +2,20 @@
 audio_processor.py — Project Mercury
 Speech-to-Text using MLX Whisper (Apple Silicon / MPS primary)
 with a transparent fallback to openai-whisper on CPU.
+
+KEY FIX: mlx_whisper's file loader internally calls ffmpeg, which may not
+be installed. We side-step this by decoding the WAV with soundfile/numpy
+and feeding a float32 numpy array directly to mlx_whisper.transcribe().
+This code path NEVER touches ffmpeg.
 """
 import io
 import logging
 import os
 import tempfile
 from pathlib import Path
+
+import numpy as np
+import soundfile as sf
 
 logger = logging.getLogger(__name__)
 
@@ -35,15 +43,21 @@ else:
 
 from config import WHISPER_MODEL_REPO, WHISPER_MODEL_FALLBACK
 
+MLX_WHISPER_SAMPLE_RATE = 16_000  # Whisper always expects 16 kHz
+
 
 class AudioProcessor:
     """
     Wraps Whisper STT in a backend-agnostic interface.
 
     Accepts audio as:
-        • bytes / bytearray
+        • bytes / bytearray  (WAV bytes — sent from the browser)
         • file-like object (BytesIO, UploadedFile, etc.)
         • str or Path (local filesystem path)
+
+    The browser already encodes audio to 16 kHz mono WAV via blobToWav(),
+    so we read it with soundfile → numpy and pass the float32 array directly
+    to mlx_whisper, completely bypassing any ffmpeg dependency.
     """
 
     def __init__(self) -> None:
@@ -70,8 +84,8 @@ class AudioProcessor:
     def transcribe(self, source, fmt: str = "wav") -> str:
         """
         Transcribe audio from various source types.
-        fmt: audio format hint (wav/webm/mp3/ogg) so the correct file
-             extension is used — MLX Whisper's ffmpeg handles the decoding.
+        fmt: audio format hint (wav/webm/mp3/ogg) — only used for temp-file
+             naming when falling back to the file-based openai-whisper path.
         Returns the transcribed string (stripped) or "" on silence/failure.
         """
         if isinstance(source, (bytes, bytearray)):
@@ -84,38 +98,94 @@ class AudioProcessor:
 
     # ── Private helpers ────────────────────────────────────────────────────────
 
+    def _wav_bytes_to_numpy(self, audio_bytes: bytes) -> np.ndarray:
+        """
+        Decode WAV bytes → float32 numpy array at 16 kHz mono.
+        Uses soundfile (libsndfile), which requires NO external binaries.
+        """
+        buf = io.BytesIO(audio_bytes)
+        data, sample_rate = sf.read(buf, dtype="float32", always_2d=False)
+
+        # Mix down to mono if stereo
+        if data.ndim == 2:
+            data = data.mean(axis=1)
+
+        # Resample to 16 kHz if necessary (simple linear interpolation)
+        if sample_rate != MLX_WHISPER_SAMPLE_RATE:
+            target_len = int(len(data) * MLX_WHISPER_SAMPLE_RATE / sample_rate)
+            data = np.interp(
+                np.linspace(0, len(data) - 1, target_len),
+                np.arange(len(data)),
+                data,
+            ).astype(np.float32)
+
+        logger.debug(
+            f"Decoded WAV: {len(data)} frames @ {MLX_WHISPER_SAMPLE_RATE} Hz "
+            f"({len(data)/MLX_WHISPER_SAMPLE_RATE:.2f}s)"
+        )
+        return data
+
     def _from_bytes(self, audio_bytes: bytes, fmt: str = "wav") -> str:
-        """Save bytes to a temp file with the correct extension, transcribe, then delete."""
-        safe_fmt = fmt.split(";")[0].strip().lower()
-        if safe_fmt in ("mpeg", "mp4"):
-            safe_fmt = "mp3"
-        suffix = f".{safe_fmt}" if safe_fmt else ".wav"
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False, prefix="mercury_audio_") as tmp:
-            tmp.write(audio_bytes)
-            tmp_path = tmp.name
-        try:
-            return self._from_file(tmp_path)
-        finally:
+        """
+        For MLX backend: decode WAV → numpy, pass array directly (no ffmpeg).
+        For openai-whisper fallback: write to a temp file (openai-whisper can
+        read WAV natively without ffmpeg for WAV files).
+        """
+        if self.use_mlx:
             try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
+                audio_np = self._wav_bytes_to_numpy(audio_bytes)
+                return self._transcribe_numpy(audio_np)
+            except Exception as exc:
+                logger.error(f"MLX numpy-path transcription failed: {exc}", exc_info=True)
+                return ""
+        else:
+            # openai-whisper can read WAV without ffmpeg
+            safe_fmt = fmt.split(";")[0].strip().lower()
+            if safe_fmt in ("mpeg", "mp4"):
+                safe_fmt = "mp3"
+            suffix = f".{safe_fmt}" if safe_fmt else ".wav"
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False, prefix="mercury_audio_") as tmp:
+                tmp.write(audio_bytes)
+                tmp_path = tmp.name
+            try:
+                return self._from_file(tmp_path)
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+    def _transcribe_numpy(self, audio_np: np.ndarray) -> str:
+        """Pass a float32 numpy array directly to mlx_whisper — zero ffmpeg calls."""
+        logger.debug(f"Transcribing numpy array: {audio_np.shape}, dtype={audio_np.dtype}")
+        try:
+            result = mlx_whisper.transcribe(
+                audio_np,                        # ← numpy array, not a file path
+                path_or_hf_repo=WHISPER_MODEL_REPO,
+                verbose=False,
+                language="en",
+            )
+            text = result.get("text", "").strip()
+            logger.info(f"MLX transcription result: '{text[:80]}'")
+            return text
+        except Exception as exc:
+            logger.error(f"mlx_whisper.transcribe (numpy) failed: {exc}", exc_info=True)
+            return ""
 
     def _from_file(self, file_path: str) -> str:
         """Transcribe an audio file; return clean text or ""."""
         try:
             if self.use_mlx:
-                result = mlx_whisper.transcribe(
-                    file_path,
-                    path_or_hf_repo=WHISPER_MODEL_REPO,
-                    verbose=False,
-                    language="en",
-                )
+                # Read file → numpy to avoid ffmpeg dependency
+                with open(file_path, "rb") as f:
+                    audio_bytes = f.read()
+                audio_np = self._wav_bytes_to_numpy(audio_bytes)
+                return self._transcribe_numpy(audio_np)
             else:
+                logger.debug(f"Transcribing '{file_path}' using OpenAI Whisper backend...")
                 result = self._ow_model.transcribe(file_path, language="en")
-
-            text = result.get("text", "").strip()
-            return text
+                text = result.get("text", "").strip()
+                return text
 
         except Exception as exc:
             logger.error(f"Transcription failed for '{file_path}': {exc}", exc_info=True)

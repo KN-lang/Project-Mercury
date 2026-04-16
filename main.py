@@ -74,10 +74,13 @@ async def transcribe(audio: UploadFile = File(...)):
         if fmt in {"mpeg", "mp4"}:
             fmt = "mp3"
         processor = _audio_processor()
+        logger.info(f"Transcribing audio: {len(content)} bytes, format: {fmt}, mine: {mime}")
         text = processor.transcribe(content, fmt=fmt)
         if not text:
+            logger.warning("Transcription returned empty text.")
             return JSONResponse({"success": False, "transcription": "",
                                  "error": "No speech detected. Please try again."})
+        logger.info(f"Transcription successful: '{text[:50]}...'")
         return {"success": True, "transcription": text}
     except Exception as exc:
         logger.error("Transcribe error", exc_info=True)

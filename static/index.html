@@ -932,10 +932,15 @@ async function blobToWav(blob) {
   const arrayBuf    = await blob.arrayBuffer();
 
   // Decode compressed audio (webm/ogg/mp4) to raw PCM float32
-  const decodeCtx   = new AudioContext({ sampleRate: TARGET_RATE });
+  const decodeCtx   = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: TARGET_RATE });
   let audioBuf;
   try {
+    // Some browsers require resume() even for decoding
+    if (decodeCtx.state === 'suspended') await decodeCtx.resume();
     audioBuf = await decodeCtx.decodeAudioData(arrayBuf);
+  } catch (err) {
+    console.error('decodeAudioData failed:', err);
+    throw new Error('Could not decode audio data. The recording might be empty or corrupted.');
   } finally {
     decodeCtx.close().catch(() => {});
   }
@@ -1093,8 +1098,9 @@ let mediaRecorder, audioChunks = [], vizCtx, analyser, animId, micStream;
 
 async function startRecording() {
   try {
+    // Relaxed constraints: let browser pick sample rate/channels, we resample in blobToWav
     micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true },
+      audio: { echoCancellation: true, noiseSuppression: true },
       video: false,
     });
 
@@ -1202,7 +1208,11 @@ function drawWaveform() {
       const alpha = 0.3 + v * 0.7;
       ctx.fillStyle = `rgba(48, 209, 88, ${alpha})`;
       ctx.beginPath();
-      ctx.roundRect(x, y, bw, bh, bw / 2);
+      if (ctx.roundRect) {
+        ctx.roundRect(x, y, bw, bh, bw / 2);
+      } else {
+        ctx.rect(x, y, bw, bh); // fallback for older browsers
+      }
       ctx.fill();
     }
   }

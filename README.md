@@ -3,6 +3,8 @@
 > **Local · Private · Offline** — A voice-controlled AI agent that runs entirely on your Mac. No cloud, no API keys, no data leaving your machine.
 
 ---
+### Youtube Video
+https://youtu.be/nee8HdI8ArI
 
 ## Overview
 
